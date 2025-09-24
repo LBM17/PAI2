@@ -1,0 +1,19 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# IDE/OS
+.vscode/
+.DS_Store
+
+# Proyecto
+.env
+logs/
+*.sqlite3
+informe/*.pdf
+*.pcap
+dist/
+build/
