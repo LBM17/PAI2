@@ -17,3 +17,4 @@ informe/*.pdf
 *.pcap
 dist/
 build/
+# pai.db
