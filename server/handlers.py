@@ -1,9 +1,15 @@
 from server.persistence import (
-    add_user, verify_credentials, nonce_seen, store_nonce, add_tx
+    add_user,
+    verify_credentials,
+    nonce_seen,
+    store_nonce,
+    add_tx,
 )
+
 
 def resp(ok: bool, message: str, data=None):
     return {"ok": ok, "message": message, "data": (data or {})}
+
 
 def handle_message(msg: dict):
     # 1) Verificación de MAC (la marca la hace verify_and_parse en server/main)
@@ -12,7 +18,9 @@ def handle_message(msg: dict):
 
     mtype = msg["type"]
     payload = msg["payload"]
-    nonce = msg["nonce"]; ts = msg["ts"]; mac = msg["mac"]
+    nonce = msg["nonce"]
+    ts = msg["ts"]
+    mac = msg["mac"]
 
     # 2) Anti-replay por NONCE
     if nonce_seen(nonce):
@@ -30,8 +38,15 @@ def handle_message(msg: dict):
 
     if mtype == "tx":
         # Sin validar cuentas/cantidades: solo registrar (requisito del PAI)
-        add_tx(payload["username"], payload["src"], payload["dst"],
-               float(payload["amount"]), nonce, ts, mac)
+        add_tx(
+            payload["username"],
+            payload["src"],
+            payload["dst"],
+            float(payload["amount"]),
+            nonce,
+            ts,
+            mac,
+        )
         return resp(True, "Transferencia con integridad")
 
     if mtype == "logout":

@@ -7,6 +7,7 @@ from server.handlers import handle_message
 
 HOST, PORT = "127.0.0.1", 5050  # puedes moverlo a .env si quieres
 
+
 def handle_client(conn: socket.socket, addr):
     try:
         while True:
@@ -23,8 +24,10 @@ def handle_client(conn: socket.socket, addr):
     finally:
         conn.close()
 
+
 def main():
-    init_db(); seed_users()
+    init_db()
+    seed_users()
     print("[server] DB ok y usuarios seed cargados")
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         s.bind((HOST, PORT))
@@ -33,7 +36,10 @@ def main():
         while True:
             conn, addr = s.accept()
             print(f"[server] cliente conectado: {addr}")
-            threading.Thread(target=handle_client, args=(conn, addr), daemon=True).start()
+            threading.Thread(
+                target=handle_client, args=(conn, addr), daemon=True
+            ).start()
+
 
 if __name__ == "__main__":
     main()

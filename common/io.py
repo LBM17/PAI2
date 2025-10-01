@@ -1,8 +1,10 @@
 # common/io.py
 import socket
 
+
 def send_line(sock: socket.socket, data: bytes):
     sock.sendall(data)
+
 
 def recv_line(sock: socket.socket, bufsize: int = 65536) -> bytes:
     # lee hasta '\n'
@@ -12,6 +14,6 @@ def recv_line(sock: socket.socket, bufsize: int = 65536) -> bytes:
         if not b:
             break
         chunks.append(b)
-        if b == b'\n':
+        if b == b"\n":
             break
-    return b''.join(chunks)
+    return b"".join(chunks)
