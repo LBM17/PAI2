@@ -1,5 +1,6 @@
 # common/protocol.py
 import json
+
 from .crypto import hmac_sha256, new_nonce, now_epoch
 
 

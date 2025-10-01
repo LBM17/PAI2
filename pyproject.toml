@@ -1,0 +1,10 @@
+[tool.black]
+line-length = 88
+target-version = ["py312"]  # si usáis 3.12 en CI; usa "py311" si es 3.11
+
+[tool.isort]
+profile = "black"           # para que no se peleen
+line_length = 88
+py_version = 312            # alinea con Python 3.12 del CI
+known_first_party = ["common", "server", "client"]
+skip = [".venv", "build", "dist", "__pycache__"]

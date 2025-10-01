@@ -1,5 +1,7 @@
 # common/config.py
-import os, base64
+import base64
+import os
+
 from dotenv import load_dotenv
 
 load_dotenv()  # carga .env

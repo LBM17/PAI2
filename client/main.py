@@ -1,6 +1,8 @@
-import socket, json
+import json
+import socket
+
 from common.config import HMAC_KEY
-from common.io import send_line, recv_line
+from common.io import recv_line, send_line
 from common.protocol import make_message
 
 HOST, PORT = "127.0.0.1", 5050

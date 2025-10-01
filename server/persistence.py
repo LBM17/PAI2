@@ -1,5 +1,7 @@
-import sqlite3, hashlib
+import hashlib
+import sqlite3
 from typing import Tuple
+
 from common.config import DB_PATH
 from common.crypto import secure_compare
 
@@ -52,7 +54,8 @@ def seed_users():
     cur.execute("SELECT COUNT(*) FROM users")
     (n,) = cur.fetchone()
     if n == 0:
-        import secrets, time
+        import secrets
+        import time
 
         for uname, pwd in [("alice", "alice123"), ("bob", "bob123")]:
             salt = secrets.token_hex(16)
@@ -72,7 +75,8 @@ def add_user(username: str, plain_password: str) -> Tuple[bool, str]:
     if cur.fetchone():
         c.close()
         return False, "Usuario ya existe"
-    import secrets, time
+    import secrets
+    import time
 
     salt = secrets.token_hex(16)
     pwd_hash = hash_password(plain_password, salt)

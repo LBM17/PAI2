@@ -1,9 +1,12 @@
-import socket, json, threading
-from common.config import HMAC_KEY, ENV
-from common.io import send_line, recv_line
+import json
+import socket
+import threading
+
+from common.config import ENV, HMAC_KEY
+from common.io import recv_line, send_line
 from common.protocol import verify_and_parse
-from server.persistence import init_db, seed_users
 from server.handlers import handle_message
+from server.persistence import init_db, seed_users
 
 HOST, PORT = "127.0.0.1", 5050  # puedes moverlo a .env si quieres
 

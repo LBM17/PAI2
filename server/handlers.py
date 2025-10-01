@@ -1,9 +1,9 @@
 from server.persistence import (
+    add_tx,
     add_user,
-    verify_credentials,
     nonce_seen,
     store_nonce,
-    add_tx,
+    verify_credentials,
 )
 
 
