@@ -32,7 +32,8 @@ def main():
 
         while True:
             print(
-                "\n[1] Registrar  [2] Login  [3] Transferir  [4] Logout  [5] Reenviar última TX (replay)  [0] Salir"
+                "\n[1] Registrar  [2] Login  [3] Transferir  [4] Logout "
+                "[5] Reenviar última TX (replay)  [0] Salir"
             )
             op = ask("Opción: ")
             if op == "1":
