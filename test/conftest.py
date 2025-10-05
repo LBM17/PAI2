@@ -1,13 +1,5 @@
 # test/conftest.py
 # --- añadir la raíz del repo al sys.path ---
-import os
-import sys
-
-SYS_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
-if SYS_ROOT not in sys.path:
-    sys.path.insert(0, SYS_ROOT)
-# -------------------------------------------
-
 import base64
 import json
 import os
@@ -16,6 +8,13 @@ import subprocess
 import sys
 import tempfile
 import time
+import pytest
+
+
+SYS_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+if SYS_ROOT not in sys.path:
+    sys.path.insert(0, SYS_ROOT)
+# -------------------------------------------
 
 HOST, PORT = "127.0.0.1", 5050
 
@@ -47,9 +46,6 @@ def _send_recv_raw(raw: bytes) -> dict:
 def pytest_generate_tests(metafunc):
     # nada
     return
-
-
-import pytest
 
 
 @pytest.fixture(scope="function")

@@ -1,14 +1,12 @@
-# common/config.py
-import base64
 import os
-
+import base64
 from dotenv import load_dotenv
 
-# Solo cargar .env si NO está ya HMAC_SECRET en el entorno (p. ej., cuando pytest la inyecta)
+# Solo carga .env si HMAC_SECRET no viene ya del entorno (tests/CI)
 if not os.getenv("HMAC_SECRET"):
-    load_dotenv()  # no pisa variables de entorno
+    load_dotenv()
 else:
-    load_dotenv(override=False)  # inofensivo
+    load_dotenv(override=False)
 
 ENV = os.getenv("ENV", "dev")
 DB_URL = os.getenv("DB_URL", "sqlite:///pai.db")
@@ -23,22 +21,20 @@ DB_PATH = db_path_from_url(DB_URL)
 
 _secret = os.getenv("HMAC_SECRET")
 if not _secret:
-    raise RuntimeError("Falta HMAC_SECRET en .env o en el entorno")
+    raise RuntimeError("Falta HMAC_SECRET en .env o en el entorno.")
 
 
 def _to_key_bytes(v: str) -> bytes:
-    import binascii
-
+    # Base64 -> HEX -> UTF-8 (último recurso)
     try:
         return base64.b64decode(v, validate=True)
     except Exception:
         try:
             return bytes.fromhex(v)
         except Exception:
-            # último recurso (no recomendado)
             return v.encode("utf-8")
 
 
 HMAC_KEY = _to_key_bytes(_secret)
 if len(HMAC_KEY) < 32:
-    raise RuntimeError("HMAC_SECRET demasiado corta: usa >= 32 bytes (256 bits).")
+    raise RuntimeError("HMAC_SECRET demasiado corta (>= 32 bytes).")

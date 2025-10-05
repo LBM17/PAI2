@@ -3,8 +3,7 @@ import json
 import os
 import socket
 import threading
-
-from common.config import ENV, HMAC_KEY
+from common.config import HMAC_KEY
 from common.io import recv_line, send_line
 from common.protocol import verify_and_parse
 from server.handlers import handle_message
