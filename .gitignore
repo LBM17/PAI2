@@ -12,9 +12,10 @@ venv/
 # Proyecto
 .env
 logs/
+logs/*.log
 *.sqlite3
 informe/*.pdf
 *.pcap
 dist/
 build/
-# pai.db
+pai.db

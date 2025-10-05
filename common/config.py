@@ -4,13 +4,16 @@ import os
 
 from dotenv import load_dotenv
 
-load_dotenv()  # carga .env
+# Solo cargar .env si NO está ya HMAC_SECRET en el entorno (p. ej., cuando pytest la inyecta)
+if not os.getenv("HMAC_SECRET"):
+    load_dotenv()  # no pisa variables de entorno
+else:
+    load_dotenv(override=False)  # inofensivo
 
 ENV = os.getenv("ENV", "dev")
 DB_URL = os.getenv("DB_URL", "sqlite:///pai.db")
 
 
-# extrae ruta sqlite:///fichero.db  ->  fichero.db
 def db_path_from_url(url: str) -> str:
     prefix = "sqlite:///"
     return url[len(prefix) :] if url.startswith(prefix) else url
@@ -20,17 +23,19 @@ DB_PATH = db_path_from_url(DB_URL)
 
 _secret = os.getenv("HMAC_SECRET")
 if not _secret:
-    raise RuntimeError("Falta HMAC_SECRET en .env")
+    raise RuntimeError("Falta HMAC_SECRET en .env o en el entorno")
 
 
 def _to_key_bytes(v: str) -> bytes:
-    # Primero Base64, luego HEX; último recurso UTF-8
+    import binascii
+
     try:
         return base64.b64decode(v, validate=True)
     except Exception:
         try:
             return bytes.fromhex(v)
         except Exception:
+            # último recurso (no recomendado)
             return v.encode("utf-8")
 
 

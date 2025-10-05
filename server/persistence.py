@@ -1,6 +1,10 @@
 import hashlib
+import secrets
 import sqlite3
+import time
 from typing import Tuple
+
+import bcrypt  # <-- NUEVO
 
 from common.config import DB_PATH
 from common.crypto import secure_compare
@@ -44,8 +48,17 @@ def _sha256_hex(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
 
-def hash_password(plain: str, salt_hex: str) -> str:
+def hash_password_sha256(plain: str, salt_hex: str) -> str:
     return _sha256_hex(bytes.fromhex(salt_hex) + plain.encode())
+
+
+def hash_password_bcrypt(plain: str) -> str:
+    # cost por defecto (~12). Ajusta si quieres.
+    return bcrypt.hashpw(plain.encode(), bcrypt.gensalt()).decode("utf-8")
+
+
+def _is_bcrypt(ph: str) -> bool:
+    return ph.startswith("$2a$") or ph.startswith("$2b$") or ph.startswith("$2y$")
 
 
 def seed_users():
@@ -54,12 +67,10 @@ def seed_users():
     cur.execute("SELECT COUNT(*) FROM users")
     (n,) = cur.fetchone()
     if n == 0:
-        import secrets
-        import time
-
         for uname, pwd in [("alice", "alice123"), ("bob", "bob123")]:
+            # Usuarios seed YA en bcrypt
             salt = secrets.token_hex(16)
-            pwd_hash = hash_password(pwd, salt)
+            pwd_hash = hash_password_bcrypt(pwd)
             cur.execute(
                 "INSERT INTO users(username,salt,pwd_hash,created) VALUES (?,?,?,?)",
                 (uname, salt, pwd_hash, int(time.time())),
@@ -75,11 +86,8 @@ def add_user(username: str, plain_password: str) -> Tuple[bool, str]:
     if cur.fetchone():
         c.close()
         return False, "Usuario ya existe"
-    import secrets
-    import time
-
     salt = secrets.token_hex(16)
-    pwd_hash = hash_password(plain_password, salt)
+    pwd_hash = hash_password_bcrypt(plain_password)  # <-- NUEVO por defecto
     with c:
         cur.execute(
             "INSERT INTO users(username,salt,pwd_hash,created) VALUES (?,?,?,?)",
@@ -90,16 +98,35 @@ def add_user(username: str, plain_password: str) -> Tuple[bool, str]:
 
 
 def verify_credentials(username: str, plain_password: str) -> bool:
+    """Compat: acepta usuarios viejos (sha256+salt) y nuevos (bcrypt).
+    Si valida con sha256, auto-migra a bcrypt."""
     c = conn()
     cur = c.cursor()
     cur.execute("SELECT salt, pwd_hash FROM users WHERE username=?", (username,))
     row = cur.fetchone()
-    c.close()
     if not row:
+        c.close()
         return False
     salt, stored = row
-    calc = hash_password(plain_password, salt)
-    return secure_compare(calc, stored)
+
+    if _is_bcrypt(stored):
+        ok = bcrypt.checkpw(plain_password.encode(), stored.encode("utf-8"))
+        c.close()
+        return ok
+
+    # Legacy SHA-256 + salt (compat)
+    calc = hash_password_sha256(plain_password, salt)
+    ok = secure_compare(calc, stored)
+
+    if ok:
+        # auto-upgrade a bcrypt
+        new_hash = hash_password_bcrypt(plain_password)
+        with c:
+            cur.execute(
+                "UPDATE users SET pwd_hash=? WHERE username=?", (new_hash, username)
+            )
+    c.close()
+    return ok
 
 
 def nonce_seen(nonce: str) -> bool:
