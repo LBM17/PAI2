@@ -8,8 +8,8 @@ import subprocess
 import sys
 import tempfile
 import time
-import pytest
 
+import pytest
 
 SYS_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 if SYS_ROOT not in sys.path:

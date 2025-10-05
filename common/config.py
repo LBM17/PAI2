@@ -1,5 +1,6 @@
-import os
 import base64
+import os
+
 from dotenv import load_dotenv
 
 # Solo carga .env si HMAC_SECRET no viene ya del entorno (tests/CI)
