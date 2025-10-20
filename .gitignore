@@ -4,6 +4,8 @@ __pycache__/
 *.egg-info/
 .venv/
 venv/
+certs/server/server.key
+
 
 # IDE/OS
 .vscode/
@@ -18,4 +20,15 @@ informe/*.pdf
 *.pcap
 dist/
 build/
-pai.db
+pai2.db
+data/*.db
+
+# --- Añadido: PAI-2 / TLS (no commitear secretos de certs) ---
+certs/**/*.key
+certs/**/*.srl
+certs/**/*.csr
+certs/**/*.p12
+certs/**/*.pfx
+
+# (Opcional) capturas si decides guardarlas en carpeta dedicada
+captures/

@@ -1,160 +1,351 @@
-import hashlib
-import secrets
-import sqlite3
-import time
-from typing import Tuple
+# server/persistence.py
+from __future__ import annotations
 
-import bcrypt  # <-- NUEVO
+import sqlite3
+from typing import List, Optional
+
+import bcrypt
 
 from common.config import DB_PATH
-from common.crypto import secure_compare
 
-SCHEMA = """
-CREATE TABLE IF NOT EXISTS users(
-  username TEXT PRIMARY KEY,
-  salt     TEXT NOT NULL,
-  pwd_hash TEXT NOT NULL,
-  created  INTEGER NOT NULL
-);
-CREATE TABLE IF NOT EXISTS transactions(
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  username TEXT NOT NULL,
-  src TEXT NOT NULL,
-  dst TEXT NOT NULL,
-  amount REAL NOT NULL,
-  nonce TEXT NOT NULL,
-  ts INTEGER NOT NULL,
-  mac TEXT NOT NULL
-);
-CREATE TABLE IF NOT EXISTS nonces_seen(
-  nonce TEXT PRIMARY KEY,
-  ts INTEGER NOT NULL
+# ---------------------------------------------------------------------------
+# Utilidad: conexión por operación (thread-safe para sqlite3 en modo básico)
+# ---------------------------------------------------------------------------
+
+
+def get_conn() -> sqlite3.Connection:
+    con = sqlite3.connect(DB_PATH, timeout=10.0)  # antes sin timeout explícito
+    con.row_factory = sqlite3.Row
+    con.execute("PRAGMA foreign_keys = ON;")
+    con.execute("PRAGMA busy_timeout = 5000;")  # espera hasta 5 s si hay bloqueo
+    return con
+
+
+# ---------------------------------------------------------------------------
+# DDL (tablas base de PAI1 + nueva tabla messages para PAI2)
+# ---------------------------------------------------------------------------
+
+CREATE_USERS_TABLE = """
+CREATE TABLE IF NOT EXISTS users (
+    username TEXT PRIMARY KEY,
+    password_hash BLOB NOT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 """
 
+CREATE_TRANSACTIONS_TABLE = """
+CREATE TABLE IF NOT EXISTS transactions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    username TEXT NOT NULL,
+    src TEXT NOT NULL,
+    dst TEXT NOT NULL,
+    amount REAL NOT NULL,
+    ts DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (username) REFERENCES users(username)
+);
+"""
 
-def conn():
-    return sqlite3.connect(DB_PATH, check_same_thread=False)
+CREATE_IDX_TX_USER_TS = """
+CREATE INDEX IF NOT EXISTS idx_transactions_user_ts
+ON transactions(username, ts);
+"""
+
+CREATE_NONCES_TABLE = """
+CREATE TABLE IF NOT EXISTS nonces_seen (
+    nonce TEXT PRIMARY KEY,
+    ts DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+"""
+
+# --- NUEVO: tabla de mensajes con límite de 144 chars ---
+CREATE_MESSAGES_TABLE = """
+CREATE TABLE IF NOT EXISTS messages (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    username TEXT NOT NULL,
+    text TEXT NOT NULL CHECK (length(text) <= 144),
+    ts DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (username) REFERENCES users(username)
+);
+"""
+
+CREATE_IDX_MESSAGES_USER_TS = """
+CREATE INDEX IF NOT EXISTS idx_messages_user_ts
+ON messages(username, ts);
+"""
 
 
-def init_db():
-    c = conn()
-    with c:
-        c.executescript(SCHEMA)
-    c.close()
+# ---------------------------------------------------------------------------
+# Inicialización y datos de ejemplo
+# ---------------------------------------------------------------------------
 
 
-def _sha256_hex(data: bytes) -> str:
-    return hashlib.sha256(data).hexdigest()
+def init_db() -> None:
+    con = get_conn()
+    try:
+        cur = con.cursor()
+        # Modo WAL y sincronización razonable para mejorar concurrencia de escrituras
+        cur.execute("PRAGMA journal_mode = WAL;")
+        cur.execute("PRAGMA synchronous = NORMAL;")
+
+        cur.execute(CREATE_USERS_TABLE)
+        cur.execute(CREATE_TRANSACTIONS_TABLE)
+        cur.execute(CREATE_IDX_TX_USER_TS)
+        cur.execute(CREATE_NONCES_TABLE)
+
+        cur.execute(CREATE_MESSAGES_TABLE)
+        cur.execute(CREATE_IDX_MESSAGES_USER_TS)
+
+        con.commit()
+    finally:
+        con.close()
 
 
-def hash_password_sha256(plain: str, salt_hex: str) -> str:
-    return _sha256_hex(bytes.fromhex(salt_hex) + plain.encode())
-
-
-def hash_password_bcrypt(plain: str) -> str:
-    # cost por defecto (~12). Ajusta si quieres.
-    return bcrypt.hashpw(plain.encode(), bcrypt.gensalt()).decode("utf-8")
-
-
-def _is_bcrypt(ph: str) -> bool:
-    return ph.startswith("$2a$") or ph.startswith("$2b$") or ph.startswith("$2y$")
-
-
-def seed_users():
-    c = conn()
-    cur = c.cursor()
-    cur.execute("SELECT COUNT(*) FROM users")
-    (n,) = cur.fetchone()
-    if n == 0:
-        for uname, pwd in [("alice", "alice123"), ("bob", "bob123")]:
-            # Usuarios seed YA en bcrypt
-            salt = secrets.token_hex(16)
-            pwd_hash = hash_password_bcrypt(pwd)
+def seed_users() -> int:
+    """
+    Inserta 1 usuario demo si la tabla está vacía (idempotente).
+    Ajusta o elimina esta función si ya gestionas seeds por otro lado.
+    """
+    con = get_conn()
+    inserted = 0
+    try:
+        cur = con.cursor()
+        total = cur.execute("SELECT COUNT(*) FROM users").fetchone()[0]
+        if total == 0:
+            username = "demo"
+            password = "demo"
+            pw_hash = bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt())
             cur.execute(
-                "INSERT INTO users(username,salt,pwd_hash,created) VALUES (?,?,?,?)",
-                (uname, salt, pwd_hash, int(time.time())),
+                "INSERT INTO users (username, password_hash) VALUES (?, ?)",
+                (username, pw_hash),
             )
-        c.commit()
-    c.close()
+            inserted = 1
+        con.commit()
+        return inserted
+    finally:
+        con.close()
 
 
-def add_user(username: str, plain_password: str) -> Tuple[bool, str]:
-    c = conn()
-    cur = c.cursor()
-    cur.execute("SELECT 1 FROM users WHERE username=?", (username,))
-    if cur.fetchone():
-        c.close()
-        return False, "Usuario ya existe"
-    salt = secrets.token_hex(16)
-    pwd_hash = hash_password_bcrypt(plain_password)  # <-- NUEVO por defecto
-    with c:
+# ---------------------------------------------------------------------------
+# Usuarios
+# ---------------------------------------------------------------------------
+
+
+def add_user(username: str, password_plain: str) -> bool:
+    """
+    Crea un usuario con contraseña hasheada. Devuelve True si se insertó,
+    False si ya existía.
+    """
+    pw_hash = bcrypt.hashpw(password_plain.encode("utf-8"), bcrypt.gensalt())
+    con = get_conn()
+    try:
+        cur = con.cursor()
+        # Evita pisar si ya existe
+        row = cur.execute(
+            "SELECT 1 FROM users WHERE username = ?", (username,)
+        ).fetchone()
+        if row:
+            return False
         cur.execute(
-            "INSERT INTO users(username,salt,pwd_hash,created) VALUES (?,?,?,?)",
-            (username, salt, pwd_hash, int(time.time())),
+            "INSERT INTO users (username, password_hash) VALUES (?, ?)",
+            (username, pw_hash),
         )
-    c.close()
-    return True, "Usuario registrado"
+        con.commit()
+        return True
+    finally:
+        con.close()
 
 
-def verify_credentials(username: str, plain_password: str) -> bool:
-    """Compat: acepta usuarios viejos (sha256+salt) y nuevos (bcrypt).
-    Si valida con sha256, auto-migra a bcrypt."""
-    c = conn()
-    cur = c.cursor()
-    cur.execute("SELECT salt, pwd_hash FROM users WHERE username=?", (username,))
-    row = cur.fetchone()
-    if not row:
-        c.close()
+def get_user(username: str) -> Optional[sqlite3.Row]:
+    con = get_conn()
+    try:
+        row = con.execute(
+            "SELECT username, password_hash, created_at FROM users WHERE username = ?",
+            (username,),
+        ).fetchone()
+        return row
+    finally:
+        con.close()
+
+
+def verify_user_credentials(username: str, password_plain: str) -> bool:
+    """
+    Verifica credenciales contra bcrypt.
+    Tolera password_hash almacenado como BLOB (bytes), TEXT (str) o memoryview.
+    Nunca propaga excepciones; devuelve False si algo falla.
+    """
+    con = get_conn()
+    try:
+        row = con.execute(
+            "SELECT password_hash FROM users WHERE username = ?",
+            (username,),
+        ).fetchone()
+        if not row:
+            return False
+
+        stored = row["password_hash"]
+
+        # Normalizar a bytes
+        try:
+            if isinstance(stored, memoryview):
+                pw_hash_bytes = stored.tobytes()
+            elif isinstance(stored, bytes):
+                pw_hash_bytes = stored
+            elif isinstance(stored, str):
+                pw_hash_bytes = stored.encode("utf-8", "ignore")
+            else:
+                pw_hash_bytes = bytes(stored)
+        except Exception:
+            return False
+
+        try:
+            return bcrypt.checkpw(password_plain.encode("utf-8"), pw_hash_bytes)
+        except Exception:
+            return False
+    except Exception:
         return False
-    salt, stored = row
+    finally:
+        con.close()
 
-    if _is_bcrypt(stored):
-        ok = bcrypt.checkpw(plain_password.encode(), stored.encode("utf-8"))
-        c.close()
-        return ok
 
-    # Legacy SHA-256 + salt (compat)
-    calc = hash_password_sha256(plain_password, salt)
-    ok = secure_compare(calc, stored)
+# Aliases de compatibilidad (por si tus handlers usan estos nombres)
+register_user = add_user
+authenticate_user = verify_user_credentials
 
-    if ok:
-        # auto-upgrade a bcrypt
-        new_hash = hash_password_bcrypt(plain_password)
-        with c:
+
+# ---------------------------------------------------------------------------
+# Nonces (anti-replay)
+# ---------------------------------------------------------------------------
+
+
+def has_nonce(nonce: str) -> bool:
+    con = get_conn()
+    try:
+        row = con.execute(
+            "SELECT 1 FROM nonces_seen WHERE nonce = ?", (nonce,)
+        ).fetchone()
+        return row is not None
+    finally:
+        con.close()
+
+
+def record_nonce(nonce: str) -> bool:
+    """
+    Registra el nonce. Devuelve True si se insertó, False si ya existía.
+    """
+    con = get_conn()
+    try:
+        cur = con.cursor()
+        try:
             cur.execute(
-                "UPDATE users SET pwd_hash=? WHERE username=?", (new_hash, username)
+                "INSERT INTO nonces_seen (nonce) VALUES (?)",
+                (nonce,),
             )
-    c.close()
-    return ok
+            con.commit()
+            return True
+        except sqlite3.IntegrityError:
+            # clave primaria (nonce) duplicada
+            return False
+    finally:
+        con.close()
 
 
-def nonce_seen(nonce: str) -> bool:
-    c = conn()
-    cur = c.cursor()
-    cur.execute("SELECT 1 FROM nonces_seen WHERE nonce=?", (nonce,))
-    ok = cur.fetchone() is not None
-    c.close()
-    return ok
+# ---------------------------------------------------------------------------
+# Transacciones (legacy PAI1, las mantenemos para compatibilidad)
+# ---------------------------------------------------------------------------
 
 
-def store_nonce(nonce: str, ts: int):
-    c = conn()
-    with c:
-        c.execute(
-            "INSERT OR IGNORE INTO nonces_seen(nonce,ts) VALUES (?,?)", (nonce, ts)
+def add_transaction(username: str, src: str, dst: str, amount: float) -> int:
+    """
+    Inserta una transacción y devuelve su id.
+    """
+    con = get_conn()
+    try:
+        cur = con.execute(
+            "INSERT INTO transactions (username, src, dst, amount) VALUES (?, ?, ?, ?)",
+            (username, src, dst, float(amount)),
         )
-    c.close()
+        con.commit()
+        return int(cur.lastrowid)
+    finally:
+        con.close()
 
 
-def add_tx(
-    username: str, src: str, dst: str, amount: float, nonce: str, ts: int, mac: str
-):
-    c = conn()
-    with c:
-        c.execute(
-            """INSERT INTO transactions(username,src,dst,amount,nonce,ts,mac)
-               VALUES (?,?,?,?,?,?,?)""",
-            (username, src, dst, amount, nonce, ts, mac),
+def list_transactions_by_user(username: str, limit: int = 50) -> List[sqlite3.Row]:
+    con = get_conn()
+    try:
+        cur = con.execute(
+            """
+            SELECT id, src, dst, amount, ts
+            FROM transactions
+            WHERE username = ?
+            ORDER BY ts DESC, id DESC
+            LIMIT ?
+            """,
+            (username, limit),
         )
-    c.close()
+        return cur.fetchall()
+    finally:
+        con.close()
+
+
+# Alias de compatibilidad (p. ej. si tus handlers llaman save_tx)
+save_tx = add_transaction
+
+
+# ---------------------------------------------------------------------------
+# Mensajes (PAI2): ≤144 chars, persistencia y consulta
+# ---------------------------------------------------------------------------
+
+
+def add_message(username: str, text: str) -> int:
+    """
+    Inserta un mensaje (<=144 chars) para 'username'.
+    Lanza ValueError si text es None o supera 144.
+    Devuelve el id autoincremental del mensaje.
+    """
+    if text is None:
+        raise ValueError("text no puede ser None")
+    if len(text) > 144:
+        # Validación en aplicación (además del CHECK de la tabla)
+        raise ValueError("message too long (>144)")
+
+    con = get_conn()
+    try:
+        cur = con.execute(
+            "INSERT INTO messages (username, text) VALUES (?, ?)",
+            (username, text),
+        )
+        con.commit()
+        return int(cur.lastrowid)
+    finally:
+        con.close()
+
+
+def count_messages_by_user(username: str) -> int:
+    con = get_conn()
+    try:
+        row = con.execute(
+            "SELECT COUNT(*) AS c FROM messages WHERE username = ?",
+            (username,),
+        ).fetchone()
+        return int(row["c"]) if row else 0
+    finally:
+        con.close()
+
+
+def list_messages_by_user(username: str, limit: int = 50) -> List[sqlite3.Row]:
+    con = get_conn()
+    try:
+        cur = con.execute(
+            """
+            SELECT id, text, ts
+            FROM messages
+            WHERE username = ?
+            ORDER BY ts DESC, id DESC
+            LIMIT ?
+            """,
+            (username, limit),
+        )
+        return cur.fetchall()
+    finally:
+        con.close()
