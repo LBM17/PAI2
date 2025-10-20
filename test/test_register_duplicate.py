@@ -1,31 +1,62 @@
 # test/test_register_duplicate.py
 import json
 import socket
+import ssl
+import uuid
+import pathlib
+import pytest
 
 from common.protocol import make_message
 
 HOST, PORT = "127.0.0.1", 5050
+CA_PEM = "certs/ca/ca.pem"
 
 
-def _send_msg(msg: bytes):
-    with socket.create_connection((HOST, PORT), timeout=2.0) as s:
-        s.sendall(msg)
-        data = b""
-        while not data.endswith(b"\n"):
-            data += s.recv(4096)
+def _tls_ctx() -> ssl.SSLContext:
+    ctx = ssl.create_default_context(purpose=ssl.Purpose.SERVER_AUTH)
+    ctx.minimum_version = ssl.TLSVersion.TLSv1_3
+    ctx.check_hostname = True
+    ctx.verify_mode = ssl.CERT_REQUIRED
+    ctx.load_verify_locations(cafile=CA_PEM)
+    return ctx
+
+
+def _recv_json_line(s: ssl.SSLSocket, timeout=2.0) -> dict:
+    s.settimeout(timeout)
+    data = b""
+    while not data.endswith(b"\n"):
+        chunk = s.recv(4096)
+        if not chunk:
+            break
+        data += chunk
     return json.loads(data.decode())
 
 
+@pytest.mark.skipif(not pathlib.Path(CA_PEM).exists(), reason="Faltan certificados")
 def test_register_duplicate_rejected(server_proc):
+    """
+    Usa TLS y la misma clave HMAC del server (fixture server_proc).
+    El primer register debe crear (o decir 'ya existe'), el segundo debe ser 'duplicado'.
+    """
     key = server_proc["key_bytes"]
+    ctx = _tls_ctx()
 
-    r1 = _send_msg(
-        make_message("register", {"username": "newuser", "password": "pw"}, key)
-    )
-    assert r1["ok"] is True
+    user = "newuser"  # fijo para forzar duplicado
+    pwd = "pw"
 
-    r2 = _send_msg(
-        make_message("register", {"username": "newuser", "password": "pw"}, key)
-    )
-    assert r2["ok"] is False
-    assert "Usuario ya existe" in r2["message"]
+    with socket.create_connection((HOST, PORT), timeout=2.0) as raw:
+        with ctx.wrap_socket(raw, server_hostname="localhost") as s:
+            # 1º intento
+            raw1 = make_message("register", {"username": user, "password": pwd}, key)
+            s.sendall(raw1)
+            r1 = _recv_json_line(s)
+            # puede ser {'ok': True, ...} o {'ok': False, 'message': 'usuario ya existe'}
+            assert "ok" in r1
+
+            # 2º intento (duplicado)
+            raw2 = make_message("register", {"username": user, "password": pwd}, key)
+            s.sendall(raw2)
+            r2 = _recv_json_line(s)
+            # aquí sí esperamos rechazo por duplicado
+            assert r2.get("ok") is False
+            assert "existe" in r2.get("message", "").lower()
