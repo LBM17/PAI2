@@ -1,15 +1,36 @@
 name: CI
 on: [push, pull_request]
+
 jobs:
   test:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - run: pip install -r requirements.txt
-      - run: black --check .
-      - run: isort --check-only .
-      - run: flake8 .
-      - run: pytest -q
+
+      - name: Install deps
+        run: pip install -r requirements.txt
+
+      - name: Lint
+        run: |
+          black --check .
+          isort --check-only .
+          flake8 .
+
+      - name: Make cert script executable (if needed)
+        run: chmod +x scripts/gen_certs_ci.sh
+
+      - name: Generate TLS certs for tests (ephemeral)
+        run: bash scripts/gen_certs_ci.sh
+
+      - name: Run tests (only test/ directory)
+        env:
+          # Valor dummy; los fixtures de test lanzan el server con su propia clave,
+          # pero esto evita cualquier import temprano que la pida.
+          HMAC_SECRET: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+          ENV: ci
+          DB_URL: sqlite:///ci.db
+        run: pytest -q test
