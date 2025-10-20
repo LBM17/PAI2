@@ -37,7 +37,7 @@ def test_register_duplicate_rejected(server_proc):
     """
     Usa TLS y la misma clave HMAC del server (fixture server_proc).
     El primer register debe crear (o decir 'ya existe'), el segundo
-     debe ser 'duplicado'.
+    debe ser 'duplicado'.
     """
     key = server_proc["key_bytes"]
     ctx = _tls_ctx()
@@ -51,8 +51,8 @@ def test_register_duplicate_rejected(server_proc):
             raw1 = make_message("register", {"username": user, "password": pwd}, key)
             s.sendall(raw1)
             r1 = _recv_json_line(s)
-            # puede ser {'ok': True, ...} o
-            # {'ok': False, 'message': 'usuario ya existe'}
+            # puede ser {'ok': True, ...} o {'ok': False,
+            #  'message': 'usuario ya existe'}
             assert "ok" in r1
 
             # 2º intento (duplicado)
