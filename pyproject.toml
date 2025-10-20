@@ -6,10 +6,11 @@ target-version = ["py312"]
 profile = "black"
 line_length = 88
 py_version = 312
-known_first_party = ["common", "server", "client"]
+known_first_party = ["common", "server", "client", "scripts"]
 skip = [".venv", "build", "dist", "__pycache__"]
 
 [tool.flake8]
 max-line-length = 88
 extend-ignore = ["E203", "W503"]
 exclude = [".venv", "build", "dist", "__pycache__"]
+

@@ -51,14 +51,11 @@ def test_register_duplicate_rejected(server_proc):
             raw1 = make_message("register", {"username": user, "password": pwd}, key)
             s.sendall(raw1)
             r1 = _recv_json_line(s)
-            # puede ser {'ok': True, ...} o {'ok': False,
-            #  'message': 'usuario ya existe'}
-            assert "ok" in r1
+            assert "ok" in r1  # ok o 'usuario ya existe'
 
             # 2º intento (duplicado)
             raw2 = make_message("register", {"username": user, "password": pwd}, key)
             s.sendall(raw2)
             r2 = _recv_json_line(s)
-            # aquí sí esperamos rechazo por duplicado
             assert r2.get("ok") is False
             assert "existe" in r2.get("message", "").lower()
