@@ -19,24 +19,16 @@ SNI = "localhost"
 CAFILE = "certs/ca/ca.pem"
 
 
-# -----------------------------
-# TLS y protocolo (import-safe)
-# -----------------------------
 def _tls_ctx(timeout: float) -> ssl.SSLContext:
     ctx = ssl.create_default_context(purpose=ssl.Purpose.SERVER_AUTH)
     ctx.minimum_version = ssl.TLSVersion.TLSv1_3
     ctx.check_hostname = True
     ctx.verify_mode = ssl.CERT_REQUIRED
     ctx.load_verify_locations(cafile=CAFILE)
-    # el timeout se aplica al socket; el contexto no lo usa
     return ctx
 
 
 def _proto_and_key():
-    """
-    Importa perezosamente common.protocol y common.config solo cuando se necesitan.
-    Evita romper la importación del módulo en CI si pytest inspecciona scripts/.
-    """
     import importlib
 
     proto = importlib.import_module("common.protocol")
@@ -44,9 +36,6 @@ def _proto_and_key():
     return proto, cfg.HMAC_KEY
 
 
-# -----------------------------
-# Utilidades
-# -----------------------------
 def _rand_user(i: int) -> Tuple[str, str]:
     suffix = "".join(random.choices(string.hexdigits.lower(), k=6))
     return (f"u_{i}_{suffix}", f"p_{suffix}")
@@ -70,9 +59,6 @@ def _preflight(host: str, port: int, timeout: float) -> None:
             pass
 
 
-# -----------------------------
-# Worker
-# -----------------------------
 def _worker(
     q: "queue.Queue[Tuple[int, int]]",
     results: List[Tuple[bool, float, str]],
@@ -94,7 +80,6 @@ def _worker(
         try:
             with socket.create_connection((HOST, PORT), timeout=timeout) as raw:
                 with ctx.wrap_socket(raw, server_hostname=SNI) as s:
-                    # register (idempotente)
                     s.sendall(
                         proto.make_message(
                             "register", {"username": user, "password": pwd}, key
@@ -102,7 +87,6 @@ def _worker(
                     )
                     _ = _recv_json_line(s, timeout)
 
-                    # login
                     s.sendall(
                         proto.make_message(
                             "login", {"username": user, "password": pwd}, key
@@ -121,7 +105,6 @@ def _worker(
                         q.task_done()
                         continue
 
-                    # msgs
                     for k in range(msgs_per_user):
                         s.sendall(
                             proto.make_message(
@@ -144,9 +127,6 @@ def _worker(
             q.task_done()
 
 
-# -----------------------------
-# Main
-# -----------------------------
 def main():
     ap = argparse.ArgumentParser(description="Mini prueba de carga PAI-2")
     ap.add_argument("--users", type=int, default=50)
@@ -190,7 +170,6 @@ def main():
         th.start()
         threads.append(th)
 
-    # Feed & progreso
     fed = 0
     while fed < args.users:
         time.sleep(max(args.ramp_ms, 0) / 1000.0)
