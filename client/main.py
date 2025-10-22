@@ -50,8 +50,8 @@ def main():
 
             while True:
                 print(
-                    "\n[1] Registrar  [2] Login  [3] Transferir  [4] Logout  "
-                    "[5] Reenviar última TX  [6] Enviar mensaje (≤144)  [0] Salir"
+                    "\n[1] Registrar  [2] Login  [3] Logout  [4] Enviar mensaje (≤144)  "
+                    "  [0] Salir"
                 )
                 op = ask("Opción: ")
 
@@ -69,7 +69,9 @@ def main():
                     user = u if r.get("ok") else None
 
                 elif op == "3":
-                    if not user:
+                    send_and_print(s, "logout", {})
+                    user = None
+                    """if not user:
                         print("> Debes hacer login primero")
                         continue
                     src = ask("Cuenta origen: ")
@@ -80,13 +82,26 @@ def main():
                         "tx",
                         {"username": user, "src": src, "dst": dst, "amount": amt},
                     )
-                    last_tx_raw = raw
+                    last_tx_raw = raw"""
 
                 elif op == "4":
-                    send_and_print(s, "logout", {})
-                    user = None
+                    if not user:
+                        print("> Debes hacer login primero")
+                        continue
+                    text = prompt_message_text()
+                    if text is None:
+                        continue
+                    send_and_print(s, "message", {"username": user, "text": text})
+                    """send_and_print(s, "logout", {})
+                    user = None"""
+                
+                elif op == "0":
+                    break
 
-                elif op == "5":
+                else:
+                    print("Opción no válida.")
+
+                """elif op == "5":
                     if not last_tx_raw:
                         print("> No hay TX previa para reenviar")
                         continue
@@ -99,13 +114,8 @@ def main():
                     text = prompt_message_text()
                     if text is None:
                         continue
-                    send_and_print(s, "message", {"username": user, "text": text})
+                    send_and_print(s, "message", {"username": user, "text": text})"""
 
-                elif op == "0":
-                    break
-
-                else:
-                    print("Opción no válida.")
 
 
 if __name__ == "__main__":
