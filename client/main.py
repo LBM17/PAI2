@@ -46,12 +46,12 @@ def main():
         with ctx.wrap_socket(raw_sock, server_hostname=TLS_SERVER_NAME) as s:
             print("Conectado al servidor (TLS).")
             user = None
-            last_tx_raw = None
+            # last_tx_raw = None
 
             while True:
                 print(
-                    "\n[1] Registrar  [2] Login  [3] Logout  [4] Enviar mensaje (≤144)  "
-                    "  [0] Salir"
+                    "\n[1] Registrar  [2] Login  [3] Logout  "
+                    "[4] Enviar mensaje (≤144)  [0] Salir"
                 )
                 op = ask("Opción: ")
 
@@ -94,7 +94,7 @@ def main():
                     send_and_print(s, "message", {"username": user, "text": text})
                     """send_and_print(s, "logout", {})
                     user = None"""
-                
+
                 elif op == "0":
                     break
 
@@ -115,7 +115,6 @@ def main():
                     if text is None:
                         continue
                     send_and_print(s, "message", {"username": user, "text": text})"""
-
 
 
 if __name__ == "__main__":
